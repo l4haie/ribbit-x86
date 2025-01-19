@@ -6,12 +6,7 @@
 
 ;;;----------------------------------------------------------------------------
 
-;; Cherchez le mot "TODO" pour trouver tous les endroits où des
-;; modifications sont requises pour l'étape 4.
-
-;;;----------------------------------------------------------------------------
-
-(define debug? #f) ;; set to #t to show expanded code, intermediate code and x86 code
+(define debug? #f) ;; set to #t to show expanded, intermediate, and x86 code
 
 ;;;----------------------------------------------------------------------------
 
@@ -23,8 +18,8 @@
   (set! prims
     (cons (cons (string->symbol
                  (list->string
-                  (cons (integer->char 36) ;; #\$
-                        (string->list (symbol->str name)))))
+                  (cons (integer->char 36) ;; #\$ 
+                        (string->list (symbol->str name))))) 
                 (cons generator
                       (cons name nparams)))
           prims)))
@@ -35,17 +30,24 @@
 (def-prim 'rib 3 (lambda (cgc)
   (if debug? (begin (display "#  ") (write '($rib)) (newline)))
   ;; TODO...
-  (x86-pop  cgc (x86-rax)) ;; ce code est incorrect!
-  (x86-pop  cgc (x86-rax))
-  (x86-pop  cgc (x86-rax))
-  (x86-push cgc (x86-imm-int 400 0))))
+  (x86-add  cgc (x86-r10) (x86-imm-int (* 8 3) 0)) ;; allocate 3 words on heap
+  (x86-pop  cgc (x86-mem (* 8 -1) (x86-r10)))      ;; field2 = fixnum 3
+  (x86-pop  cgc (x86-mem (* 8 -2) (x86-r10)))      ;; field1 = fixnum 2
+  (x86-pop  cgc (x86-mem (* 8 -3) (x86-r10)))      ;; field0 = fixnum 1
+  (x86-lea  cgc (x86-rax) (x86-mem -17 (x86-r10))) ;; rax = rib pointer
+  (x86-push cgc (x86-rax))))                       ;; push rib pointer
 
 (def-prim 'rib? 1 (lambda (cgc)
   (define done (asm-make-label* cgc))
   (if debug? (begin (display "#  ") (write '($rib?)) (newline)))
   ;; TODO...
-  (x86-pop  cgc (x86-rax)) ;; ce code est incorrect!
-  (x86-push cgc (x86-imm-int 400 0))))
+  (x86-pop   cgc (x86-rax))                   ;; pop TOS into rax
+  (x86-and   cgc (x86-rax) (x86-imm-int 7 0)) ;; extract tag (bitmask)
+  (x86-mov   cgc (x86-rax) (false-value cgc)) ;; result = #f (maybe)
+  (x86-je    cgc done)                        ;; tag == 000? (ZF == 1?)
+  (x86-mov   cgc (x86-rax) (true-value cgc))  ;; result = #t (tag == 111)
+  (x86-label cgc done)
+  (x86-push  cgc (x86-rax))))                 ;; push result 
 
 (def-prim 'field0 1 (lambda (cgc)
   (if debug? (begin (display "#  ") (write '($field0)) (newline)))
@@ -86,38 +88,46 @@
 (def-prim 'eqv? 2 (lambda (cgc)
   (define done (asm-make-label* cgc))
   (if debug? (begin (display "#  ") (write '($eqv?)) (newline)))
-  (x86-pop  cgc (x86-rbx))                   ;; pop y into rbx
-  (x86-pop  cgc (x86-rax))                   ;; pop x into rax
-  (x86-cmp  cgc (x86-rax) (x86-rbx))         ;; compare x and y
-  (x86-mov  cgc (x86-rax) (true-value cgc))  ;; result = #t (maybe)
-  (x86-je   cgc done)                        ;; x == y?
-  (x86-mov  cgc (x86-rax) (false-value cgc)) ;; result = #f
+  (x86-pop   cgc (x86-rbx))                   ;; pop y into rbx
+  (x86-pop   cgc (x86-rax))                   ;; pop x into rax
+  (x86-cmp   cgc (x86-rax) (x86-rbx))         ;; compare x and y
+  (x86-mov   cgc (x86-rax) (true-value cgc))  ;; result = #t (maybe)
+  (x86-je    cgc done)                        ;; x == y ?
+  (x86-mov   cgc (x86-rax) (false-value cgc)) ;; result = #f
   (x86-label cgc done)
-  (x86-push cgc (x86-rax))))                 ;; push result
+  (x86-push  cgc (x86-rax))))                 ;; push result
 
 (def-prim '< 2 (lambda (cgc)
+  (define done (asm-make-label* cgc))
   (if debug? (begin (display "#  ") (write '($<)) (newline)))
   ;; TODO...
-  (x86-pop  cgc (x86-rax)) ;; ce code est incorrect!
-  (x86-pop  cgc (x86-rax))
-  (x86-push cgc (x86-imm-int 400 0))))
+  (x86-pop   cgc (x86-rbx))                   ;; pop y into rbx
+  (x86-pop   cgc (x86-rax))                   ;; pop x into rax
+  (x86-cmp   cgc (x86-rax) (x86-rbx))         ;; compare x and y 
+  (x86-mov   cgc (x86-rax) (true-value cgc))  ;; result = #t (maybe)
+  (x86-jl    cgc done)                        ;; x < y ?
+  (x86-mov   cgc (x86-rax) (false-value cgc)) ;; result = #f
+  (x86-label cgc done)
+  (x86-push  cgc (x86-rax))))                 ;; push result
 
 (def-prim '+ 2 (lambda (cgc)
   (if debug? (begin (display "#  ") (write '($+)) (newline)))
-  (x86-pop  cgc (x86-rbx))                         ;; pop y into rbx
-  (x86-add  cgc (x86-mem 0 (x86-rsp)) (x86-rbx)))) ;; add it to x (TOS)
+  (x86-pop cgc (x86-rbx))                         ;; pop y into rbx
+  (x86-add cgc (x86-mem 0 (x86-rsp)) (x86-rbx)))) ;; add it to x (TOS)
 
 (def-prim '- 2 (lambda (cgc)
   (if debug? (begin (display "#  ") (write '($-)) (newline)))
-  (x86-pop  cgc (x86-rbx))                         ;; pop y into rbx
-  (x86-sub  cgc (x86-mem 0 (x86-rsp)) (x86-rbx)))) ;; substract it from x (TOS)
+  (x86-pop cgc (x86-rbx))                         ;; pop y into rbx
+  (x86-sub cgc (x86-mem 0 (x86-rsp)) (x86-rbx)))) ;; substract it from x (TOS)
 
 (def-prim '* 2 (lambda (cgc)
   (if debug? (begin (display "#  ") (write '($*)) (newline)))
   ;; TODO...
-  (x86-pop  cgc (x86-rax)) ;; ce code est incorrect!
-  (x86-pop  cgc (x86-rax))
-  (x86-push cgc (x86-imm-int 400 0))))
+  (x86-pop  cgc (x86-rbx))                   ;; pop y into rbx
+  (x86-pop  cgc (x86-rax))                   ;; pop x into rax
+  (x86-sar  cgc (x86-rbx) (x86-imm-int 3 0)) ;; untag y
+  (x86-mul  cgc (x86-rbx))                   ;; multiply y to x
+  (x86-push cgc (x86-rax))))                 ;; push result = x * y
 
 (def-prim 'quotient 2 (lambda (cgc)
   (if debug? (begin (display "#  ") (write '($quotient)) (newline)))
@@ -226,8 +236,8 @@
 (define (gen-jump cgc nargs)
   (if debug? (begin (display "#  ") (write (cons 'jump (cons nargs '()))) (newline)))
   ;; TODO...
-  (x86-push cgc (x86-imm-int 1 0)) ;; code à remplacer!
-  (x86-call cgc (x86-global-label cgc 'exit)))
+  (x86-mov cgc (x86-rdi) (x86-mem (* 8 (+ 1 nargs)) (x86-rsp))) ;; get proc rib (skip ra & args)
+  (x86-jmp cgc (x86-mem -7 (x86-rdi))))                         ;; jump to proc code 
 
 (define (gen-ret cgc i n)
   (if debug? (begin (display "#  ") (write (cons 'ret (cons i (cons n '())))) (newline)))
@@ -239,9 +249,10 @@
 
 (define (gen-iffalse cgc lbl)
   (if debug? (begin (display "#  ") (write (cons 'iffalse (cons (asm-label-id lbl) '()))) (newline)))
-  ;; TODO...
-  (x86-push cgc (x86-imm-int 1 0)) ;; code à remplacer!
-  (x86-call cgc (x86-global-label cgc 'exit)))
+  ;; TODO... 
+  (x86-pop cgc (x86-rax))                   ;; pop TOS into rax
+  (x86-cmp cgc (x86-rax) (false-value cgc)) ;; compare TOS and #f
+  (x86-je  cgc lbl))                        ;; branch to lbl if ZF == 1
 
 (define (gen-goto cgc lbl)
   (if debug? (begin (display "#  ") (write (cons 'goto (cons (asm-label-id lbl) '()))) (newline)))
@@ -416,6 +427,7 @@
   ;; TODO...
   ;; Il y a des modifications à faire ici si vous implémentez un
   ;; garbage collector.
+  
 
   (x86-ret cgc 0))
 
@@ -561,18 +573,22 @@
                                   cte
                                   (lambda (cte*)
                                     (let ((nargs (length (cdr expr))))
-                                      (if tail?
-                                          (begin
-                                            ;; TODO...
-                                            ;; appel terminal
-                                            #f)
+                                      (if tail? ;; tail call?
+                                          ;; TODO...
+                                          (let ((i (- (length cte*) 
+                                                      (length (memv #t cte*)))))
+                                            (gen-push-loc cgc i) ;; push return address
+                                            (gen-move cgc ;; replace activation frame
+                                                      (+ 2 nargs)
+                                                      (length cte))
+                                            (gen-jump cgc nargs)) 
                                           (let ((ra (asm-make-label* cgc)))
                                             (gen-push-ra cgc ra)
                                             (gen-jump cgc nargs)
                                             (gen-label cgc ra))))))))))))
 
-        (else
-         (gen-push-lit cgc expr) ;; self-evaluating
+        (else ;; self-evaluating
+         (gen-push-lit cgc expr) 
          (gen-ret-maybe cgc cte tail?))))
 
 (define (gen-list cgc exprs cte cont)
@@ -1238,8 +1254,86 @@
   ;; formes lambda et let sont rencontrées dans le parcours récursif
   ;; de expr.
 
-  expr) ;; à compléter!
+  (cond ((symbol? expr)
+         (let ((var expr)) 
+           (if (memv var mutable-vars)
+               (cons '$field0 (cons var '()))
+               expr)))
 
+        ((pair? expr)
+         (let ((first (car expr)))
+
+           (cond ((eqv? first 'quote)
+                  expr)
+
+                 ((eqv? first 'set!)
+                  (let ((var (cadr expr))) 
+                    (cons '$field0-set!    
+                          (cons var
+                                (mve-list (cddr expr)
+                                          mutable-vars)))))
+
+                 ((eqv? first 'if)
+                  (cons 'if (mve-list (cdr expr) mutable-vars)))
+
+                 ((eqv? first 'begin)
+                  (cons 'begin (mve-list (cdr expr) mutable-vars)))
+                 
+                 ((eqv? first 'lambda) 
+                  (let* ((params (cadr expr))
+                         (body (cddr expr))
+                         (mv-body (mv body))
+                         (mv-box (box? params mv-body))
+                         (mutable-vars* (union mutable-vars mv-body)))
+                    (cons 'lambda
+                          (cons params
+                                (if (null? mv-box) 
+                                    (mve-list body mutable-vars*)
+                                    (cons
+                                     (cons 'let
+                                           (cons (map (lambda (v)
+                                                        (cons v
+                                                              (cons (box! v)
+                                                                    '())))
+                                                      mv-box)
+                                                 (mve-list body mutable-vars*)))
+                                     '()))))))
+
+                 ((eqv? first 'let) 
+                  (let* ((bindings (cadr expr))
+                         (body (cddr expr))
+                         (mutable-vars* (union mutable-vars (mv body))))
+                    (cons 'let
+                          (cons (map (lambda (b)
+                                       (cons (car b)
+                                             (if (memv (car b) mutable-vars*) 
+                                                 (cons (box! (mve (cadr b)
+                                                                  mutable-vars))
+                                                       '())
+                                                 (mve (cdr b) mutable-vars))))
+                                     bindings)
+                                (mve-list body mutable-vars*)))))
+                                                 
+                 ((assv first prims)
+                  (cons first (mve-list (cdr expr) mutable-vars)))
+
+                 (else
+                  (mve-list expr mutable-vars)))))
+
+        (else
+         (expand-constant expr)))) ;; self-evaluating
+
+(define (box? vars mutable-vars)
+  (cond ((null? vars)
+         '())  
+         ((memv (car vars) mutable-vars)
+          (cons (car vars) (box? (cdr vars) mutable-vars)))
+         (else
+          (box? (cdr vars) mutable-vars))))
+
+(define (box! val)
+  (cons '$rib (cons val (cons 0 (cons 0 '())))))
+  
 (define (mve-list exprs mutable-vars)
   (if (pair? exprs)
       (cons (mve (car exprs) mutable-vars)
@@ -1268,14 +1362,91 @@
   ;; le nom de variable est remplacé par #f (on ne peut pas retirer
   ;; le nom de la liste car ça changerait la position des autres variables
   ;; libres).
+  
+  (cond ((symbol? expr)
+         (if (memv expr free-vars)
+             (let* ((n (length free-vars))
+                    (i (- n (length (memv expr free-vars)))))
+               (get-free-var i n))
+             expr))
+        
+        ((pair? expr)
+         (let ((first (car expr)))
+           
+           (cond ((eqv? first 'quote)
+                  expr)
 
-  expr) ;; à compléter!
+                 ((eqv? first 'if)
+                  (cons 'if (cc-list (cdr expr) free-vars)))
+
+                 ((eqv? first 'begin)
+                  (cons 'begin (cc-list (cdr expr) free-vars)))
+                 
+                 ((eqv? first 'lambda)
+                  (let ((params (cadr expr))
+                        (body (cddr expr))
+                        (free-vars* (fv expr)))
+                    (cons '$rib
+                          (cons
+                           (cons 'lambda
+                                 (cons
+                                  (cons '$self
+                                        params)
+                                  (cc-list body free-vars*)))
+                           (cons (rib-fv (length free-vars*) ;; free-vars*)
+                                         (cc free-vars* free-vars)) 
+                                 (cons procedure-type
+                                       '()))))))
+                 
+                 ((eqv? first 'let)
+                  (let* ((bindings (cadr expr))
+                         (body (cddr expr))
+                         (free-vars* (shadow-fv bindings free-vars)))
+                    (pp free-vars*)
+                    (cons 'let
+                          (cons (map (lambda (b)
+                                       (cons (car b)
+                                             (cons (cc (cadr b) free-vars)
+                                                   '())))
+                                     bindings)
+                                (cc-list body free-vars*)))))
+
+                 ((assv first prims)
+                  (cons first (cc-list (cdr expr) free-vars)))
+                 
+                 (else
+                  (cc-list expr free-vars)))))
+
+        (else
+         (expand-constant expr)))) ;; self-evaluating
+
 
 (define (cc-list exprs free-vars)
   (if (pair? exprs)
       (cons (cc (car exprs) free-vars)
             (cc-list (cdr exprs) free-vars))
       '()))
+
+(define (shadow-fv bindings free-vars)
+  (let ((vars (map car bindings)))
+    (map (lambda (v)
+           (if (memv v vars) #f v))
+         free-vars)))
+
+(define (rib-fv n free-vars) 
+  (cond ((= 0 n) 0)
+        ((= 1 n) (car free-vars))
+        ((< n 4)
+         (let loop ((i n) (lst (reverse (cons '$rib free-vars))))
+           (if (= i 3)
+               (reverse lst)
+               (loop (+ i 1) (cons 0 lst)))))
+        (else
+         (cons '$rib
+               (cons (car free-vars)
+                     (cons (cadr free-vars)
+                           (cons (rib-fv (- n 2) (cddr free-vars))
+                                 '())))))))
 
 (define (get-free-var i n)
   (let ((expr '($field1 $self)))
